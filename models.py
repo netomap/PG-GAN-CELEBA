@@ -67,8 +67,8 @@ class Generator(nn.Module):
         n_camadas = len(nomes_camadas) - 1 # porque não considera a última camada
 
         model = dict()
-        for nome in nomes_camadas: 
-            model[nome] = self.net.get_submodule(nome).state_dict()
+        for k, nome in enumerate(nomes_camadas): 
+            model[nome] = self.net[k].state_dict()
         
         checkpoint = {
             'model': model,
@@ -89,13 +89,14 @@ class Generator(nn.Module):
         img_channels, tempo = checkpoint['img_channels'], checkpoint['tempo']
         print (f'{noise_dim=}, {cfl=}, {img_channels=}, {tempo=}')
         
-        for camada in camadas_checkpoint:
+        modulos_desta_rede = list(self.net._modules)
+        for k, camada in enumerate(modulos_desta_rede):
             if (camada != 'ultima'):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
-                print (camada, self.net.get_submodule(camada).load_state_dict(model[camada]))
+                print (camada, self.net[k].load_state_dict(model[camada]))
         
         # a não ser que o número de camadas do checkpoint seja o mesmo do modelo instanciado
-        if (len(checkpoint.keys()) == len(list(self.net._modules))):
-            print (camada, self.net.get_submodule('ultima').load_state_dict(model['ultima']))
+        if (len(model.keys()) == len(modulos_desta_rede)):
+            print (camada, self.net[-1].load_state_dict(model['ultima']))
 
 
 class Discriminator(nn.Module):
@@ -157,8 +158,8 @@ class Discriminator(nn.Module):
         n_camadas = len(nomes_camadas) - 1 # porque não considera a última camada
 
         model = dict()
-        for nome in nomes_camadas: 
-            model[nome] = self.net.get_submodule(nome).state_dict()
+        for k, nome in enumerate(nomes_camadas): 
+            model[nome] = self.net[k].state_dict()
         
         checkpoint = {
             'model': model,
@@ -178,13 +179,14 @@ class Discriminator(nn.Module):
         img_channels, tempo = checkpoint['img_channels'], checkpoint['tempo']
         print (f'{cfl=}, {img_channels=}, {tempo=}')
         
-        for camada in camadas_checkpoint:
+        modulos_desta_rede = list(self.net._modules)
+        for k, camada in enumerate(modulos_desta_rede):
             if (camada != 'ultima'):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
-                print (camada, self.net.get_submodule(camada).load_state_dict(model[camada]))
+                print (camada, self.net[k].load_state_dict(model[camada]))
         
         # a não ser que o número de camadas do checkpoint seja o mesmo do modelo instanciado
-        if (len(checkpoint.keys()) == len(list(self.net._modules))):
-            print (camada, self.net.get_submodule('ultima').load_state_dict(model['ultima']))
+        if (len(model.keys()) == len(modulos_desta_rede)):
+            print (camada, self.net[-1].load_state_dict(model['ultima']))
 
 if __name__ == '__main__':
 
