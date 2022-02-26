@@ -1,5 +1,4 @@
 import pathlib
-from cv2 import normalize
 import torch
 from torch import nn
 from torchvision import transforms
