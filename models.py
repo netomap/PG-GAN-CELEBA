@@ -1,8 +1,6 @@
-from operator import mod
 import torch
-from torch import negative, nn
+from torch import nn
 import utils as u
-import sys
 from datetime import datetime
 import os
 
@@ -46,6 +44,8 @@ class Generator(nn.Module):
         self.net = nn.Sequential()
         for nome, modulo in modules:
             self.net.add_module(nome, modulo)
+        
+        self.net.apply(weights_init)
 
     def _create_block(self, in_channels, out_channels, kernel_size, stride, padding):
         return nn.Sequential(
@@ -59,7 +59,7 @@ class Generator(nn.Module):
     def forward(self, x):
         return self.net(x)
     
-    def save(self):
+    def save(self, epochs):
         name = self.__class__.__name__
         if not os.path.exists('./models/'): os.makedirs('./models/')
 
@@ -75,7 +75,8 @@ class Generator(nn.Module):
             'noise_dim': self.noise_dim,
             'cfl': self.cfl,
             'img_channels': self.img_channels,
-            'tempo': datetime.strftime(datetime.now(), '%d/%m/%Y, %H:%M')
+            'tempo': datetime.strftime(datetime.now(), '%d/%m/%Y, %H:%M'),
+            'epochs': epochs
         }
 
         torch.save(checkpoint, f'./models/{name}_{n_camadas}_layer.pt')
@@ -91,7 +92,7 @@ class Generator(nn.Module):
         
         modulos_desta_rede = list(self.net._modules)
         for k, camada in enumerate(modulos_desta_rede):
-            if (camada != 'ultima'):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
+            if (camada != 'ultima' and camada in camadas_checkpoint):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
                 print (camada, self.net[k].load_state_dict(model[camada]))
         
         # a não ser que o número de camadas do checkpoint seja o mesmo do modelo instanciado
@@ -137,6 +138,8 @@ class Discriminator(nn.Module):
         self.net = nn.Sequential()
         for nome, modulo in modules:
             self.net.add_module(nome, modulo)
+        
+        self.net.apply(weights_init)
     
     def _create_block(self, in_channels, out_channels, kernel_size, stride, padding, batch_normalization=True):
         sub_modulo = []
@@ -147,10 +150,11 @@ class Discriminator(nn.Module):
         sub_modulo.append(nn.LeakyReLU(negative_slope=0.2))
         return nn.Sequential(*sub_modulo)
     
+    
     def forward(self, x):
         return self.net(x)
     
-    def save(self):
+    def save(self, epochs):
         name = self.__class__.__name__
         if not os.path.exists('./models/'): os.makedirs('./models/')
 
@@ -165,7 +169,8 @@ class Discriminator(nn.Module):
             'model': model,
             'cfl': self.cfl,
             'img_channels': self.img_channels,
-            'tempo': datetime.strftime(datetime.now(), '%d/%m/%Y, %H:%M')
+            'tempo': datetime.strftime(datetime.now(), '%d/%m/%Y, %H:%M'),
+            'epochs': epochs
         }
 
         torch.save(checkpoint, f'./models/{name}_{n_camadas}_layer.pt')
@@ -181,18 +186,26 @@ class Discriminator(nn.Module):
         
         modulos_desta_rede = list(self.net._modules)
         for k, camada in enumerate(modulos_desta_rede):
-            if (camada != 'ultima'):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
+            if (camada != 'ultima' and camada in camadas_checkpoint):# não se carrega a última camada pois o channels_in varia a cada vez que a rede aumenta.
                 print (camada, self.net[k].load_state_dict(model[camada]))
         
         # a não ser que o número de camadas do checkpoint seja o mesmo do modelo instanciado
         if (len(model.keys()) == len(modulos_desta_rede)):
             print (camada, self.net[-1].load_state_dict(model['ultima']))
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
 if __name__ == '__main__':
 
     NOISE_DIM = 100
 
-    generator = Generator(img_channels=3, noise_dim=100, n_camadas=4, cfl=512)
+    generator = Generator(img_channels=3, noise_dim=100, n_camadas=2, cfl=512)
     print (generator)
 
     noise = u.get_noise(5, 100)
@@ -201,8 +214,8 @@ if __name__ == '__main__':
 
     generator.save()
 
-    g2 = Generator(img_channels=3, noise_dim=100, n_camadas=4, cfl=512)
-    g2.load_checkpoint('./models/Generator_4_layer.pt')
+    g2 = Generator(img_channels=3, noise_dim=100, n_camadas=2, cfl=512)
+    g2.load_checkpoint('./models/Generator_2_layer.pt')
     print (f'fim')
 
     discriminator = Discriminator(img_channels=3, n_camadas=1, cfl=64)
@@ -213,6 +226,6 @@ if __name__ == '__main__':
 
     discriminator.save()
 
-    d2 = Discriminator(img_channels=3, n_camadas=4, cfl=64)
-    d2.load_checkpoint('./models/Discriminator_4_layer.pt')
+    d2 = Discriminator(img_channels=3, n_camadas=1, cfl=64)
+    d2.load_checkpoint('./models/Discriminator_1_layer.pt')
     print (f'fim')
