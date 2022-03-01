@@ -141,7 +141,7 @@ dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 print (f'{len(dataset)=}, {BATCH_SIZE=}, {len(dataloader)=}')
 
 # ESTA PARTE SERVE APENAS PARA PEGAR O last_epoch
-checkpoint = torch.load(f'./models/Generator_{N_CAMADAS_MAX}_layer.pt')
+checkpoint = torch.load(f'./models/Generator_{N_CAMADAS_MAX}_layer.pt', map_location=torch.device('cpu'))
 last_epoch = checkpoint['epochs']
 
 if (N_CAMADAS > N_CAMADAS_MAX):
