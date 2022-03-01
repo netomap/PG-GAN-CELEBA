@@ -1,20 +1,32 @@
+import pathlib
+from pyexpat import model
 import torch
-from torch import nn
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import utils as u
 from models import Generator, Discriminator
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from IPython.display import clear_output
 from torch.utils.tensorboard.writer import SummaryWriter
+import argparse, os, re, time
 
-NOISE_DIM = 100
-N_CAMADAS = 3  # ASSIM, O TAMANHO DA IMAGEM SERÁ N_CAMADAS*8. [1->8x8, 2->16x16, 3->32x32, 4->64x64, 5->128x128, 6->256x256]
+parser = argparse.ArgumentParser()
+
+parser.add_argument('--ncamadas', type=int, required=True, help='Numero de camadas das redes neurais, sem considerar a ultima.')
+parser.add_argument('--noise_dim', type=int, help='Numero de dimensoes do vetor noise.', default=100)
+parser.add_argument('--img_channels', type=int, help='Numero de canais das imagens.', default=3)
+parser.add_argument('--lr', type=float, help='Learning Rate', default=1e-4)
+parser.add_argument('--batch_size', type=int, help='Batch size', default=128)
+
+
+args = parser.parse_args()
+
+NOISE_DIM = args.noise_dim
+N_CAMADAS = args.ncamadas  # ASSIM, O TAMANHO DA IMAGEM SERÁ N_CAMADAS*8. [1->8x8, 2->16x16, 3->32x32, 4->64x64, 5->128x128, 6->256x256]
 IMG_SIZE = 4 * (2**N_CAMADAS)
-IMG_CHANNELS = 3
-LEARNING_RATE = 1e-4
-BATCH_SIZE = 128
+IMG_CHANNELS = args.img_channels
+LEARNING_RATE = args.lr
+BATCH_SIZE = args.batch_size
 MODELS_DIR = './models'
 IMGS_DIR = './imgs/celeba'
 TAXA_TREINAMENTO_DISCRIMINATOR = 5  # ou seja, o discriminator treina 5 vezes mais que o generator
@@ -27,16 +39,17 @@ def criar_transformer(img_size_):
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.Normalize(mean=(.5, .5, .5), std=(.5, .5, .5))
     ])
-transformer = criar_transformer(img_size_=32)
 
 inv_transformer = transforms.Compose([
     transforms.Normalize(mean=(-1., -1., -1.), std=(1., 1., 1.)),
     transforms.ToPILImage(),
 ])
 
-writer = SummaryWriter('./logs/pg-wgan-celeba-3-camadas')
-writer.add_text('mensagem inicial', '7ª fase do treinamento PG-GAN com três camadas iniciais + a camada final.Assim, o tamanho da imagem será de 32x32 pixels.')
+writer = SummaryWriter(f'./logs/pg-wgan-celeba-{N_CAMADAS}-camadas')
+writer.add_text('mensagem inicial', f"""Treinamento PG-GAN com {N_CAMADAS} camadas iniciais + a camada final.
+Assim, o tamanho da imagem será de {IMG_SIZE}x{IMG_SIZE} pixels.""")
 
+print ('Criando os modelos para testar suas saídas: ')
 discriminator = Discriminator(img_channels=IMG_CHANNELS, n_camadas=N_CAMADAS, cfl=128)
 generator = Generator(img_channels=IMG_CHANNELS, noise_dim=NOISE_DIM, n_camadas=N_CAMADAS, cfl=512)
 
@@ -47,6 +60,8 @@ output_discriminator = discriminator(output_generator)
 print (f'{noise.shape=}')
 print (f'{output_generator.shape=}')
 print (f'{output_discriminator.shape=}')
+
+print ('ok!')
 
 def gradient_penalty(model_d, real_imgs, fake_imgs, device_):
 
@@ -82,15 +97,26 @@ def imprimir_imagem_checkpoint():
     plt.axis('off')
     plt.show()
 
-discriminator = Discriminator(img_channels=3, n_camadas=N_CAMADAS, cfl=128)
-generator = Generator(img_channels=3, noise_dim=NOISE_DIM, n_camadas=N_CAMADAS, cfl=512)
+def pegar_ultimo_treinamento():
+    models_list = list(pathlib.Path('./models/').glob('*.pt'))
+    layers = []
+    for model_path in models_list:
+        layers.append(int(re.findall(r'[0-9]{1,}', str(model_path))[0]))
+    
+    return max(layers) # retorna o checkpoint de maior número de camadas
+
+N_CAMADAS_MAX = pegar_ultimo_treinamento() # maior número de camadas.
+
+print (f'Criando os modelos para o treinamento com {N_CAMADAS} camadas.')
+discriminator = Discriminator(img_channels=IMG_CHANNELS, n_camadas=N_CAMADAS, cfl=128)
+generator = Generator(img_channels=IMG_CHANNELS, noise_dim=NOISE_DIM, n_camadas=N_CAMADAS, cfl=512)
 
 print ('Importando modelo discriminator...')
-discriminator.load_checkpoint('./models/Discriminator_3_layer.pt')
+discriminator.load_checkpoint(f'./models/Discriminator_{N_CAMADAS_MAX}_layer.pt')
 print ('==============================================================\n\n')
 
 print ('Importando modelo generator...')
-generator.load_checkpoint('./models/Generator_3_layer.pt')
+generator.load_checkpoint(f'./models/Generator_{N_CAMADAS_MAX}_layer.pt')
 print ('==============================================================\n\n')
 
 noise = u.get_noise(1, NOISE_DIM)
@@ -114,18 +140,28 @@ dataset = u.Custom_Dataset(IMGS_DIR, pattern='*.jpg', transformer=transformer, i
 dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 print (f'{len(dataset)=}, {BATCH_SIZE=}, {len(dataloader)=}')
 
-checkpoint = torch.load('./models/Generator_3_layer.pt')
+# ESTA PARTE SERVE APENAS PARA PEGAR O last_epoch
+checkpoint = torch.load(f'./models/Generator_{N_CAMADAS_MAX}_layer.pt')
 last_epoch = checkpoint['epochs']
-print (f'{last_epoch=}')
 
-print (f'ok')
+if (N_CAMADAS > N_CAMADAS_MAX):
+    print (f'Treinamento novo com {N_CAMADAS} camadas, pois o último treinamento tem somente {N_CAMADAS_MAX} camadas.')
+    last_epoch = 0
+else:
+    print (f'Continuação de treinamento com {N_CAMADAS}, pois já existem checkpoints de {N_CAMADAS_MAX} camadas treinados.')
+
+print (f'O treinamento vai começar com época número: {last_epoch}')
+print (f'Preparação das variáveis, modelos e otimizadores ok')
 
 generator.train()
 discriminator.train()
 
+print ('Iniciando treinamento.')
+time.sleep(10) # apenas para ler os prints...
+
 for epoch in range(last_epoch + 1, last_epoch + 11, 1):
 
-    clear_output(wait=True)
+    os.system('clear')
     print (f'{epoch=}')
 
     for real_imgs in tqdm(dataloader):
@@ -163,4 +199,4 @@ for epoch in range(last_epoch + 1, last_epoch + 11, 1):
 
 writer.close()
 
-print (f'fim do treinamento!')
+print (f'Fim do treinamento!')
